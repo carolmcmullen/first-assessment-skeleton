@@ -6,47 +6,64 @@ import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.net.Socket;
+import java.util.ArrayList;
+import java.util.List;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.cooksys.assessment.model.Client;
 import com.cooksys.assessment.model.Message;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-public class ClientHandler implements Runnable {
+public class ClientHandler extends Thread implements Runnable {
 	private Logger log = LoggerFactory.getLogger(ClientHandler.class);
 
 	private Socket socket;
+	private String userName;
+	// threads represents multiple connections
+	private final ClientHandler[] threads;
+	private int maxClientsCount;
+	private PrintWriter writer = null;
+	private ObjectMapper mapper;
 
-	public ClientHandler(Socket socket) {
+	public ClientHandler(Socket socket, ClientHandler[] threads) {
 		super();
 		this.socket = socket;
+		this.threads = threads;
+	    maxClientsCount = threads.length;
 	}
 
 	public void run() {
 		try {
-
-			ObjectMapper mapper = new ObjectMapper();
+			mapper = new ObjectMapper();
 			BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-			PrintWriter writer = new PrintWriter(new OutputStreamWriter(socket.getOutputStream()));
-
+			writer = new PrintWriter(new OutputStreamWriter(socket.getOutputStream()));
+			
 			while (!socket.isClosed()) {
 				String raw = reader.readLine();
 				Message message = mapper.readValue(raw, Message.class);
 
-				switch (message.getCommand()) {
+				switch (message.getCommand().toLowerCase()) {
 					case "connect":
-						log.info("user <{}> connected", message.getUsername());
+						connectCommand(message);
 						break;
 					case "disconnect":
-						log.info("user <{}> disconnected", message.getUsername());
+						disconnectCommand(message);
 						this.socket.close();
 						break;
 					case "echo":
-						log.info("user <{}> echoed message <{}>", message.getUsername(), message.getContents());
-						String response = mapper.writeValueAsString(message);
-						writer.write(response);
-						writer.flush();
+						echoCommand(message);
+						break;
+					case "users":
+						userCommand(message);
+						break;
+					case "username":
+						sendMessage(message);						
+						break;
+					case "broadcast":
+						broadcastCommand(message);
 						break;
 				}
 			}
@@ -55,5 +72,97 @@ public class ClientHandler implements Runnable {
 			log.error("Something went wrong :/", e);
 		}
 	}
+	
+	private String createMessage(String msg){
+		return new java.util.Date().toString() + ": " + msg;
+	}
+	
+	private void connectCommand(Message message) throws JsonProcessingException {
+		log.info("user <{}> connected", message.getUsername());
+		userName = message.getUsername();
+		boolean threadSet = false;
+		for (int i = 0; i < maxClientsCount; i++) {
+			if(!threadSet && threads[i] == null){
+				threads[i] = this;
+				threadSet = true;
+			}
+			// set the current thread to show that another client has joined
+	        if (threads[i] != null && threads[i] != this) {
+	        	message.setContents(createMessage(message.getUsername() + " has connected"));
+	        	String r2 = mapper.writeValueAsString(message);
+				writer.write(r2);	
+				writer.flush();
+	          threads[i]. writer.write(r2);
+	          threads[i]. writer.flush();
+	        }
+	      }
+	}
+	
+	/*
+     * Set the current thread variable to null so that a new client
+     * could be accepted by the server.
+     */
+	private void disconnectCommand(Message message) throws JsonProcessingException {
+		log.info("user <{}> disconnected", message.getUsername());
+	      for (int i = 0; i < maxClientsCount; i++) {
+	        if (threads[i] == this) {
+	          threads[i] = null;
+	        }
+	        else{
+	        	// show when someone disconnects
+	        	if (threads[i] != null && threads[i] != this) {
+		        	message.setContents(createMessage(message.getUsername() + " has disconnected"));
+		        	String r2 = mapper.writeValueAsString(message);
+					writer.write(r2);	
+					writer.flush();
+		          threads[i]. writer.write(r2);
+		          threads[i]. writer.flush();
+		        }
+	        }
+	    }		
+	}
 
+	private void echoCommand(Message message) throws JsonProcessingException {
+		log.info("user <{}> echoed message <{}>", message.getUsername(), message.getContents());
+		String response = mapper.writeValueAsString(message);
+		writer.write(response);
+		writer.flush();
+	}
+		
+	private void userCommand(Message message) throws JsonProcessingException {
+		log.info("request users");
+		StringBuilder sb = new StringBuilder();
+		String timeStamp = new java.util.Date().toString();
+		sb.append(timeStamp +": currently connected users:");
+		for (int i = 0; i < maxClientsCount; i++) {
+	        if (threads[i] != null) {
+	        	sb.append("\n"+threads[i].userName);
+	        }
+		}		
+		message.setContents(sb.toString());
+		writer.write(mapper.writeValueAsString(message));	
+		writer.flush();
+	}
+	
+	private void broadcastCommand(Message message) throws JsonProcessingException{
+		for (int i = 0; i < maxClientsCount; i++) {
+	        if (threads[i] != null && !threads[i].userName.equals(message.getUsername())) {
+	        	message.setContents(createMessage(message.getContents()));
+				threads[i].writer.write(mapper.writeValueAsString(message));	
+				threads[i].writer.flush();
+	        }
+		}
+	}
+	
+	private void sendMessage(Message message) throws JsonProcessingException{
+		String content = message.getContents();
+		String user = content.substring(0, content.indexOf(" "));
+		for (int i = 0; i < maxClientsCount; i++) {
+	        if (threads[i] != null && threads[i].userName.equals(user)) {
+	        	message.setContents(createMessage(content.substring(content.indexOf(" "))));
+				threads[i].writer.write(mapper.writeValueAsString(message));	
+				threads[i].writer.flush();
+	        }
+		}
+	}
 }

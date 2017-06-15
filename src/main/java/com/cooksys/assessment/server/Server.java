@@ -10,6 +10,8 @@ import org.slf4j.LoggerFactory;
 
 public class Server implements Runnable {
 	private Logger log = LoggerFactory.getLogger(Server.class);
+	private final static int maxClientsCount = 10;
+	private static final ClientHandler[] threads = new ClientHandler[maxClientsCount];
 	
 	private int port;
 	private ExecutorService executor;
@@ -27,7 +29,7 @@ public class Server implements Runnable {
 			ss = new ServerSocket(this.port);
 			while (true) {
 				Socket socket = ss.accept();
-				ClientHandler handler = new ClientHandler(socket);
+				ClientHandler handler = new ClientHandler(socket, threads);
 				executor.execute(handler);
 			}
 		} catch (IOException e) {
