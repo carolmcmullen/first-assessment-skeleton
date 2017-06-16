@@ -6,7 +6,7 @@ export class Message {
   constructor ({ username, command, contents }) {
     //console.log(username)
     //console.log(command)
-    //console.log(contents)
+    //console.log("contents: "+contents)
     this.username = username
     this.command = command
     this.contents = contents

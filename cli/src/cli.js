@@ -38,19 +38,29 @@ cli
     const contents = rest.join(' ')
 
     if (command === 'disconnect') {
+      cli
+        .delimiter(cli.chalk['red']('disconnect>'))
       server.end(new Message({ username, command }).toJSON() + '\n')
     } else if (command === 'echo') {
+      cli
+        .delimiter(cli.chalk['blue']('echo>'))
       server.write(new Message({ username, command, contents }).toJSON() + '\n')
     } else if (command === 'users') {
+      cli
+        .delimiter(cli.chalk['magenta']('users>'))
       server.write(new Message({ username, command, contents }).toJSON() + '\n')
     } else if (command === 'broadcast') {
+      cli
+        .delimiter(cli.chalk['cyan']('broadcast>'))
       server.write(new Message({ username, command, contents }).toJSON() + '\n')
-    } else if (command === 'username') {
-cli
-    .delimiter(cli.chalk['blue']('username>'))
+    } else if (command === '@username') {
+      cli
+        .delimiter(cli.chalk['white']('username>'))
       server.write(new Message({ username, command, contents }).toJSON() + '\n')
     } else {
-      this.log(`Command <${command}> was not recognized`)
+      cli
+        .delimiter(cli.chalk['gray']('>'))
+     server.write(new Message({ username, command, contents }).toJSON() + '\n')
     }
 
     callback()

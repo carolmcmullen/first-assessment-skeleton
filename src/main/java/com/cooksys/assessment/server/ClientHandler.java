@@ -27,6 +27,7 @@ public class ClientHandler extends Thread implements Runnable {
 	private int maxClientsCount;
 	private PrintWriter writer = null;
 	private ObjectMapper mapper;
+	private Message previousMsg;
 
 	public ClientHandler(Socket socket, ClientHandler[] threads) {
 		super();
@@ -45,30 +46,53 @@ public class ClientHandler extends Thread implements Runnable {
 				String raw = reader.readLine();
 				Message message = mapper.readValue(raw, Message.class);
 
-				switch (message.getCommand().toLowerCase()) {
-					case "connect":
-						connectCommand(message);
-						break;
-					case "disconnect":
-						disconnectCommand(message);
-						this.socket.close();
-						break;
-					case "echo":
-						echoCommand(message);
-						break;
-					case "users":
-						userCommand(message);
-						break;
-					case "username":
-						sendMessage(message);						
-						break;
-					case "broadcast":
-						broadcastCommand(message);
-						break;
-				}
+				processMessage(message);
 			}
 
 		} catch (IOException e) {
+			log.error("Something went wrong :/", e);
+		}
+	}
+	
+	///
+	private void processMessage(Message message){		
+		try{
+			switch (message.getCommand().toLowerCase()) {
+				case "connect":
+					connectCommand(message);
+					break;
+				case "disconnect":
+					disconnectCommand(message);
+					this.socket.close();
+					break;
+				case "echo":
+					echoCommand(message);
+					previousMsg = message;
+					break;
+				case "users":
+					userCommand(message);
+					previousMsg = message;
+					break;
+				case "username":
+					sendMessage(message);
+					previousMsg = message;
+					break;
+				case "broadcast":
+					broadcastCommand(message);
+					previousMsg = message;
+					break;
+				default:
+					if(previousMsg == null)
+						noCommand(message);
+					else{
+						message.setContents(message.getCommand()+ " "+message.getContents());
+						message.setCommand(previousMsg.getCommand());
+						processMessage(message);
+					}
+					break;
+			}
+		}
+		catch (IOException e) {
 			log.error("Something went wrong :/", e);
 		}
 	}
@@ -89,11 +113,8 @@ public class ClientHandler extends Thread implements Runnable {
 			// set the current thread to show that another client has joined
 	        if (threads[i] != null && threads[i] != this) {
 	        	message.setContents(createMessage(message.getUsername() + " has connected"));
-	        	String r2 = mapper.writeValueAsString(message);
-				writer.write(r2);	
-				writer.flush();
-	          threads[i]. writer.write(r2);
-	          threads[i]. writer.flush();
+	          threads[i].writer.write(mapper.writeValueAsString(message));
+	          threads[i].writer.flush();
 	        }
 	      }
 	}
@@ -112,10 +133,7 @@ public class ClientHandler extends Thread implements Runnable {
 	        	// show when someone disconnects
 	        	if (threads[i] != null && threads[i] != this) {
 		        	message.setContents(createMessage(message.getUsername() + " has disconnected"));
-		        	String r2 = mapper.writeValueAsString(message);
-					writer.write(r2);	
-					writer.flush();
-		          threads[i]. writer.write(r2);
+		          threads[i]. writer.write(mapper.writeValueAsString(message));
 		          threads[i]. writer.flush();
 		        }
 	        }
@@ -124,6 +142,13 @@ public class ClientHandler extends Thread implements Runnable {
 
 	private void echoCommand(Message message) throws JsonProcessingException {
 		log.info("user <{}> echoed message <{}>", message.getUsername(), message.getContents());
+		String response = mapper.writeValueAsString(message);
+		writer.write(response);
+		writer.flush();
+	}
+	
+	private void noCommand(Message message) throws JsonProcessingException {
+		message.setContents(createMessage("command is required"));
 		String response = mapper.writeValueAsString(message);
 		writer.write(response);
 		writer.flush();
